@@ -1,32 +1,27 @@
-from datetime import datetime, timezone
-import os
-from typing import Optional
-from contextlib import asynccontextmanager
-
-from fastapi import Depends, FastAPI, status
-from pydantic import BaseModel
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
+import models
+from embeddings import get_embedding
+from clustering import find_best_cluster
+from pydantic import BaseModel
+import os
+import uuid
+from datetime import datetime, timezone
 
-from models import Base, Ticket
-
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgrespassword@localhost:5432/opendedupe")
-
+# --- Database Setup ---
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/opendedupe")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Enable pgvector and create tables
+with engine.connect() as conn:
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    conn.commit()
+models.Base.metadata.create_all(bind=engine)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        conn.commit()
-    Base.metadata.create_all(bind=engine)
-    yield
-
-
-app = FastAPI(title="OpenDedupe API", version="0.1.0", lifespan=lifespan)
-
+app = FastAPI(title="OpenDedupe API")
 
 def get_db():
     db = SessionLocal()
@@ -35,77 +30,59 @@ def get_db():
     finally:
         db.close()
 
-
-class TicketIngestSchema(BaseModel):
-    external_id: str
-    source_system: str
+# --- Pydantic Schemas (Updated for your DB) ---
+class TicketCreate(BaseModel):
     subject: str
     body: str
-    reporter: str
-    system_tag: Optional[str] = None
-    reported_at: datetime
 
+# --- Endpoints ---
+@app.post("/tickets")
+def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
+    # 1. Embed subject and body
+    text_to_embed = f"{ticket.subject}. {ticket.body}"
+    vector = get_embedding(text_to_embed)
 
-class TicketResponseSchema(BaseModel):
-    id: int
-    external_id: str
-    source_system: str
-    subject: str
-    reported_at: datetime
-    ingested_at: datetime
-    status: str
+    # 2. Fetch existing tickets
+    existing_tickets = db.query(models.Ticket).all()
 
-    class Config:
-        from_attributes = True
+    # 3. Find match
+    matched_cluster_id = find_best_cluster(vector, existing_tickets)
 
+    # 4. Create cluster if no match
+    if not matched_cluster_id:
+        new_cluster = models.Cluster()
+        db.add(new_cluster)
+        db.commit()
+        db.refresh(new_cluster)
+        matched_cluster_id = new_cluster.id
 
-@app.post("/tickets", response_model=TicketResponseSchema, status_code=status.HTTP_201_CREATED)
-def ingest_ticket(ticket_in: TicketIngestSchema, db: Session = Depends(get_db)):
-    existing_ticket = (
-        db.query(Ticket)
-        .filter(
-            Ticket.external_id == ticket_in.external_id,
-            Ticket.source_system == ticket_in.source_system,
-        )
-        .first()
-    )
-
-    if existing_ticket:
-        return TicketResponseSchema(
-            id=existing_ticket.id,
-            external_id=existing_ticket.external_id,
-            source_system=existing_ticket.source_system,
-            subject=existing_ticket.subject,
-            reported_at=existing_ticket.reported_at,
-            ingested_at=existing_ticket.ingested_at,
-            status="already_ingested",
-        )
-
-    new_ticket = Ticket(
-        external_id=ticket_in.external_id,
-        source_system=ticket_in.source_system,
-        subject=ticket_in.subject,
-        body=ticket_in.body,
-        reporter=ticket_in.reporter,
-        system_tag=ticket_in.system_tag,
-        reported_at=ticket_in.reported_at,
+    # 5. Save the ticket with ALL your required fields
+    db_ticket = models.Ticket(
+        external_id=str(uuid.uuid4()), # Mocking an external ticketing system ID
+        source_system="demo_script",
+        subject=ticket.subject,
+        body=ticket.body,
+        reporter="test_user@domain.com",
+        reported_at=datetime.now(timezone.utc),
         ingested_at=datetime.now(timezone.utc),
+        manually_split=False,
+        embedding=vector,
+        cluster_id=matched_cluster_id
     )
-    db.add(new_ticket)
+    db.add(db_ticket)
     db.commit()
-    db.refresh(new_ticket)
+    db.refresh(db_ticket)
 
-    return TicketResponseSchema(
-        id=new_ticket.id,
-        external_id=new_ticket.external_id,
-        source_system=new_ticket.source_system,
-        subject=new_ticket.subject,
-        reported_at=new_ticket.reported_at,
-        ingested_at=new_ticket.ingested_at,
-        status="ingested",
-    )
+    return {"id": db_ticket.id, "subject": db_ticket.subject, "cluster_id": db_ticket.cluster_id}
 
-
-@app.get("/version")
-def get_version():
-    return {"version": "v0.1.0"}
+@app.get("/clusters")
+def get_clusters(db: Session = Depends(get_db)):
+    clusters = db.query(models.Cluster).all()
+    result = []
+    for c in clusters:
+        result.append({
+            "cluster_id": c.id,
+            "ticket_count": len(c.tickets),
+            "tickets": [{"id": t.id, "subject": t.subject} for t in c.tickets]
+        })
+    return result

@@ -1,35 +1,35 @@
 version: '3.8'
 
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    container_name: opendedupe-db
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - hf_model_cache:/app/hf_cache  # Persist Hugging Face models
     environment:
-      POSTGRES_DB: opendedupe
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      - DATABASE_URL=postgresql://user:password@db:5432/opendedupe
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg15
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=opendedupe
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d opendedupe"]
+      test: ["CMD-SHELL", "pg_isready -U user -d opendedupe"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    container_name: opendedupe-api
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/opendedupe
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - .:/app
-
 volumes:
-  pgdata:
+  postgres_data:
+  hf_model_cache:  # Define the new volume for Hugging Face models      

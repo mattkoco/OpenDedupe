@@ -1,7 +1,16 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Web Framework & Server
 fastapi==0.110.0
-uvicorn[standard]==0.29.0
+uvicorn==0.29.0
+pydantic==2.6.4
+
+# Database
 sqlalchemy==2.0.29
 psycopg2-binary==2.9.9
 pgvector==0.2.5
-pydantic==2.6.4
+
+# Machine Learning & Embeddings
+numpy<2.0.0
+torch==2.3.0
 sentence-transformers==2.6.1
