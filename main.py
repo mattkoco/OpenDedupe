@@ -86,3 +86,7 @@ def get_clusters(db: Session = Depends(get_db)):
             "tickets": [{"id": t.id, "subject": t.subject} for t in c.tickets]
         })
     return result
+
+@app.get("/version")
+def get_version():
+    return {"version": "0.2.0"}
