@@ -15,7 +15,7 @@ An open source ticket deduplication and clustering layer for IT help desks.
 
 Most help desk tools do not automatically detect when multiple incoming tickets describe the exact same problem. During an outage, agents are forced to manually find and merge dozens of duplicate tickets under time pressure. OpenDedupe sits alongside your existing help desk to automatically group duplicate tickets into clusters using text embeddings and time proximity.
 
-**Note:** OpenDedupe is not a help desk replacement. It never auto-closes or auto-merges tickets without a human confirming the action on the dashboard first.
+**Note:** OpenDedupe is not a help desk replacement. It never auto closes or auto merges tickets without a human confirming the action on the dashboard first.
 
 ## Features
 
@@ -41,7 +41,7 @@ Most help desk tools do not automatically detect when multiple incoming tickets 
 
 4. The API will be available at `http://localhost:8000`.
 
-5. Test it — send a sample ticket:
+5. Test it by sending a sample ticket:
        curl -X POST http://localhost:8000/tickets \
          -H "Content-Type: application/json" \
          -d '{
