@@ -52,7 +52,7 @@ Most help desk tools do not automatically detect when multiple incoming tickets 
                "reported_at": "2026-08-20T10:00:00Z"
              }'
 
-   Sending the same request twice should not create a duplicate record — that's the idempotency check working.
+   Sending the same request twice should not create a duplicate record, which is the idempotency check working.
 
 ## Changelog
 
